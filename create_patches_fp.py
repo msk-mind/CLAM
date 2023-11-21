@@ -59,13 +59,14 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
                   seg = False, save_mask = True, 
                   stitch= False, 
                   patch = False, auto_skip=True, process_list = None, 
-                  storage_options = {}):
+                  s3_storage_key = None,
+                  s3_storage_secret = None,
+                  s3_endpoint_url = None):
     
+    storage_options = {"key" : s3_storage_key, 
+                       "secret" : s3_storage_secret, 
+                       "client_kwargs" : {'endpoint_url' : s3_endpoint_url}}
 
-
-    #slides = sorted(os.listdir(source))
-    #slides = [slide for slide in slides if os.path.isfile(os.path.join(source, slide))]
-    
     filesystem, slide_path = fsspec.core.url_to_fs(source, **storage_options)
     slides = []  # type: list[str]
     
@@ -75,6 +76,8 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
         for ext in VALID_SLIDE_EXTENSIONS:
             slides += filesystem.glob(f"{slide_path}/*{ext}")
     
+    slides = [slide.split('/')[-1] for slide in slides]
+
     if process_list is None:
         df = initialize_df(slides, seg_params, filter_params, vis_params, patch_params)
     
@@ -117,7 +120,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 
         # Inialize WSI
         full_path = os.path.join(source, slide)
-        WSI_object = WholeSlideImage(full_path)
+        WSI_object = WholeSlideImage(full_path, storage_options)
 
         if use_default_params:
             current_vis_params = vis_params.copy()
@@ -259,7 +262,9 @@ parser.add_argument('--patch_level', type=int, default=0,
                     help='downsample level at which to patch')
 parser.add_argument('--process_list',  type = str, default=None,
                     help='name of list of images to process with parameters (.csv)')
-parser.add_argument('--storage_options', type = dict, default=None)
+parser.add_argument('--s3_storage_key', type = str, default=None)
+parser.add_argument('--s3_storage_secret', type = str, default=None)
+parser.add_argument('--s3_endpoint_url', type = str, default=None)
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -323,4 +328,6 @@ if __name__ == '__main__':
                                             stitch= args.stitch,
                                             patch_level=args.patch_level, patch = args.patch,
                                             process_list = process_list, auto_skip=args.no_auto_skip,
-                                            storage_options=args.storage_options)
+                                            s3_storage_key=args.s3_storage_key, 
+                                            s3_storage_secret=args.s3_storage_secret, 
+                                            s3_endpoint_url=args.s3_endpoint_url) 
