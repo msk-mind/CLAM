@@ -20,6 +20,10 @@ import torch.nn.functional as F
 import pandas as pd
 import numpy as np
 
+#import ctypes
+#libgcc_s = ctypes.CDLL('libgcc_s.so.1')
+
+
 
 def main(args):
     # create results directory if necessary
@@ -42,6 +46,7 @@ def main(args):
     folds = np.arange(start, end)
     for i in folds:
         seed_torch(args.seed)
+        print('{}/split_{}.csv'.format(args.split_dir, i))
         train_dataset, val_dataset, test_dataset = dataset.return_splits(from_id=False, 
                 csv_path='{}/splits_{}.csv'.format(args.split_dir, i))
         
@@ -153,12 +158,14 @@ print('\nLoad Dataset')
 
 if args.task == 'task_1_tumor_vs_normal':
     args.n_classes=2
-    dataset = Generic_MIL_Dataset(csv_path = 'dataset_csv/tumor_vs_normal_dummy_clean.csv',
-                            data_dir= os.path.join(args.data_root_dir, 'tumor_vs_normal_resnet_features'),
+    dataset = Generic_MIL_Dataset(csv_path = '/gpfs/mskmind_ess/kohlia/BR_16-512/codebase/updated/breast-ana/breastana/path_tr_data.csv',
+                            #data_dir = os.path.join(args.data_root_dir, 'tumor_vs_normal_resnet_features'),
+                            data_dir
+                                  ='/gpfs/mskmind_emc/data_user/kohlia/BR_16-512/BR_16-512_embeddings/512',
                             shuffle = False, 
                             seed = args.seed, 
                             print_info = True,
-                            label_dict = {'normal_tissue':0, 'tumor_tissue':1},
+                            label_dict = {0:0, 1:1},
                             patient_strat=False,
                             ignore=[])
 
