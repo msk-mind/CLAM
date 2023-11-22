@@ -29,10 +29,11 @@ class WholeSlideImage(object):
         """
 
         self.name = os.path.splitext(os.path.basename(path))[0]
-        print(path)
         self.wsi = TiffSlide(path, storage_options=storage_options)
         self.level_downsamples = self._assertLevelDownsamples()
         self.level_dim = self.wsi.level_dimensions
+    
+        self.storage_options = storage_options
     
         self.contours_tissue = None
         self.contours_tumor = None
@@ -257,7 +258,7 @@ class WholeSlideImage(object):
                 except StopIteration:
                     continue
 
-                file_path = initialize_hdf5_bag(first_patch, save_coord=save_coord)
+                file_path = initialize_hdf5_bag(first_patch, save_coord=save_coord, storage_options=self.storage_options)
                 self.hdf5_file = file_path
 
             for patch in patch_gen:
@@ -377,17 +378,19 @@ class WholeSlideImage(object):
         print("Total number of contours to process: ", n_contours)
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
-        for idx, cont in enumerate(self.contours_tissue):
-            if (idx + 1) % fp_chunk_size == fp_chunk_size:
-                print('Processing contour {}/{}'.format(idx, n_contours))
-            
-            asset_dict, attr_dict = self.process_contour(cont, self.holes_tissue[idx], patch_level, save_path, patch_size, step_size, **kwargs)
-            if len(asset_dict) > 0:
-                if init:
-                    save_hdf5(save_path_hdf5, asset_dict, attr_dict, mode='w')
-                    init = False
-                else:
-                    save_hdf5(save_path_hdf5, asset_dict, mode='a')
+
+        with fsspec.open("simplecache::" + save_path_hdf5, 'ab+', s3=self.storage_options) as h5file:
+            for idx, cont in enumerate(self.contours_tissue):
+                if (idx + 1) % fp_chunk_size == fp_chunk_size:
+                    print('Processing contour {}/{}'.format(idx, n_contours))
+                
+                asset_dict, attr_dict = self.process_contour(cont, self.holes_tissue[idx], patch_level, save_path, patch_size, step_size, **kwargs)
+                if len(asset_dict) > 0:
+                    if init:
+                        save_hdf5(h5file, asset_dict, attr_dict, mode='w')
+                        init = False
+                    else:
+                        save_hdf5(h5file, asset_dict, mode='a')
 
         return self.hdf5_file
 

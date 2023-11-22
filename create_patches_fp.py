@@ -13,9 +13,11 @@ import fsspec
 
 VALID_SLIDE_EXTENSIONS = [".svs", ".scn", ".tif"]
 
-def stitching(file_path, wsi_object, downscale = 64):
+def stitching(file_path, wsi_object, downscale = 64, storage_options={}):
     start = time.time()
-    heatmap = StitchCoords(file_path, wsi_object, downscale=downscale, bg_color=(0,0,0), alpha=-1, draw_grid=False)
+    heatmap = StitchCoords(file_path, wsi_object, 
+                           downscale=downscale, bg_color=(0,0,0), 
+                           alpha=-1, draw_grid=False, storage_options=storage_options)
     total_time = time.time() - start
     
     return heatmap, total_time
@@ -104,7 +106,9 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
     stitch_times = 0.
 
     for i in range(total):
-        df.to_csv(os.path.join(save_dir, 'process_list_autogen.csv'), index=False)
+        csv_path = os.path.join(save_dir, 'process_list_autogen.csv')
+        with fsspec.open(csv_path, 'w', **storage_options) as f:
+            df.to_csv(f, index=False)
         idx = process_stack.index[i]
         slide = process_stack.loc[idx, 'slide_id']
         print("\n\nprogress: {:.2f}, {}/{}".format(i/total, i, total))
@@ -113,7 +117,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
         df.loc[idx, 'process'] = 0
         slide_id, _ = os.path.splitext(slide)
 
-        if auto_skip and os.path.isfile(os.path.join(patch_save_dir, slide_id + '.h5')):
+        if auto_skip and filesystem.isfile(os.path.join(patch_save_dir, slide_id + '.h5')):
             print('{} already exist in destination location, skipped'.format(slide_id))
             df.loc[idx, 'status'] = 'already_exist'
             continue
@@ -207,7 +211,8 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
         if save_mask:
             mask = WSI_object.visWSI(**current_vis_params)
             mask_path = os.path.join(mask_save_dir, slide_id+'.jpg')
-            mask.save(mask_path)
+            with fsspec.open(mask_path, 'wb', **storage_options) as f:
+                mask.save(f, "JPEG")
 
         patch_time_elapsed = -1 # Default time
         if patch:
@@ -218,10 +223,11 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
         stitch_time_elapsed = -1
         if stitch:
             file_path = os.path.join(patch_save_dir, slide_id+'.h5')
-            if os.path.isfile(file_path):
-                heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, downscale=64)
+            if filesystem.isfile(file_path):
+                heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, downscale=64, storage_options=storage_options)
                 stitch_path = os.path.join(stitch_save_dir, slide_id+'.jpg')
-                heatmap.save(stitch_path)
+                with fsspec.open(stitch_path, 'wb', **storage_options) as f:
+                    heatmap.save(f, "JPEG")
 
         print("segmentation took {} seconds".format(seg_time_elapsed))
         print("patching took {} seconds".format(patch_time_elapsed))
@@ -236,7 +242,8 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
     patch_times /= total
     stitch_times /= total
 
-    df.to_csv(os.path.join(save_dir, 'process_list_autogen.csv'), index=False)
+    with fsspec.open(csv_path, 'w', **storage_options) as f:
+        df.to_csv(f, index=False)
     print("average segmentation time in s per slide: {}".format(seg_times))
     print("average patching time in s per slide: {}".format(patch_times))
     print("average stiching time in s per slide: {}".format(stitch_times))
@@ -289,11 +296,6 @@ if __name__ == '__main__':
                    'patch_save_dir': patch_save_dir, 
                    'mask_save_dir' : mask_save_dir, 
                    'stitch_save_dir': stitch_save_dir} 
-
-    for key, val in directories.items():
-        print("{} : {}".format(key, val))
-        if key not in ['source']:
-            os.makedirs(val, exist_ok=True)
 
     seg_params = {'seg_level': -1, 'sthresh': 8, 'mthresh': 7, 'close': 4, 'use_otsu': False,
                   'keep_ids': 'none', 'exclude_ids': 'none'}
