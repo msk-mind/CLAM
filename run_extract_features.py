@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
+import sys
 
 @dataclass
 class ExtractFeaturesConfig:
@@ -21,6 +22,7 @@ class ExtractFeaturesConfig:
     output_prefix: str
     model_name: str = "resnet50"
     model_path: str = ""
+    ctranspath_path: str = ""
     batch_size: int = 8
     print_every: int = 20
     target_patch_size: Optional[int] = None
@@ -46,8 +48,9 @@ def compute_w_loader(cfg: ExtractFeaturesConfig):
         model = resnet50_baseline(pretrained=True)
     elif cfg.model_name == 'ctranspath':
         pretrained = True
+        sys.path.append(cfg.ctranspath_path)
         model = torch.load(cfg.model_path)
-        target_patch_size = 226
+        cfg.target_patch_size = 224
     elif cfg.model_name == 'vit16':
         from hipt_model_utils import get_vit256
         model = get_vit256(pretrained_weights=cfg.model_path)
@@ -74,7 +77,7 @@ def compute_w_loader(cfg: ExtractFeaturesConfig):
     for count, (batch, coords) in enumerate(loader):
         with torch.no_grad():
             if count % cfg.print_every == 0:
-                log.info('batch {}/{}, {} files processed'.format(count, len(loader), count * batch_size))
+                log.info('batch {}/{}, {} files processed'.format(count, len(loader), count * cfg.batch_size))
             batch = batch.to(device, non_blocking=True)
 
             features = model(batch)

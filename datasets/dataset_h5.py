@@ -110,7 +110,7 @@ class Whole_Slide_Bag_FP(Dataset):
         """
         self.pretrained=pretrained
         self.wsi = wsi
-        if not custom_transforms:
+        if not custom_transforms and target_patch_size:
             self.roi_transforms = eval_transforms(pretrained=pretrained)
             self.roi_transforms.transforms.insert(0, transforms.CenterCrop(target_patch_size))
         else:

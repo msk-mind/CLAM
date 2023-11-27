@@ -112,7 +112,7 @@ def seg_and_patch(cfg: SegPatchConfig):
 
     if cfg.patch:
         log.info("Patching...")
-        WSI_object.process_contours(cfg.output_prefix + ".h5", **OmegaConf.to_container(cfg.patch_config, resolve=True))
+        h5file = WSI_object.process_contours(cfg.output_prefix + ".h5", **OmegaConf.to_container(cfg.patch_config, resolve=True))
 
     if cfg.stitch:
         log.info("Stitching...")
