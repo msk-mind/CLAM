@@ -13,12 +13,11 @@ from pathlib import Path
 
 VALID_SLIDE_EXTENSIONS = [".svs", ".scn", ".tif"]
 
-def stitching(file_path, wsi_object, filesystem, downscale = 64):
+def stitching(file_path, wsi_object, downscale = 64):
     start = time.time()
-    with filesystem.open(file_path, 'rb') as hdf5_file_path:
-        heatmap = StitchCoords(hdf5_file_path, wsi_object, 
-                            downscale=downscale, bg_color=(0,0,0), 
-                            alpha=-1, draw_grid=False)
+    heatmap = StitchCoords(file_path, wsi_object, 
+                        downscale=downscale, bg_color=(0,0,0), 
+                        alpha=-1, draw_grid=False)
     total_time = time.time() - start
     
     return heatmap, total_time
@@ -236,7 +235,8 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
         if stitch:
             file_path = str(Path(dst_path + patch_save_dir) / f'{slide_id}.h5')
             if dst_filesystem.isfile(file_path):
-                heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, dst_filesystem, downscale=64)
+                with dst_filesystem.open(file_path, 'rb') as hdf5_file_path:
+                    heatmap, stitch_time_elapsed = stitching(hdf5_file_path, WSI_object, downscale=64)
                 stitch_path = str(Path(dst_path + stitch_save_dir) / f'{slide_id}.jpg')
                 with dst_filesystem.open(stitch_path, 'wb') as f:
                     heatmap.save(f, "JPEG")
