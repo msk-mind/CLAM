@@ -28,7 +28,6 @@ class WholeSlideImage(object):
         self.wsi = TiffSlide(path, storage_options=storage_options)
         self.level_downsamples = self._assertLevelDownsamples()
         self.level_dim = self.wsi.level_dimensions
-        self.storage_options = storage_options    
 
 
         self.contours_tissue = None

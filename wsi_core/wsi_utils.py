@@ -1,12 +1,10 @@
 import h5py
 import numpy as np
 import os
-import pdb
 from wsi_core.util_classes import Mosaic_Canvas
 from PIL import Image
 import math
 import cv2
-import fsspec
 
 def isWhitePatch(patch, satThresh=5):
     patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
@@ -213,7 +211,7 @@ def DrawMapFromCoords(canvas, wsi_object, coords, patch_size, vis_level, indices
 
     return Image.fromarray(canvas)
 
-def StitchPatches(hdf5_file_path, downscale=16, draw_grid=False, bg_color=(0,0,0), alpha=-1, storage_options={}):
+def StitchPatches(hdf5_file_path, downscale=16, draw_grid=False, bg_color=(0,0,0), alpha=-1):
     file = h5py.File(hdf5_file_path, 'r')
     dset = file['imgs']
     coords = file['coords'][:]
