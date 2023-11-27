@@ -10,14 +10,16 @@ import argparse
 import pdb
 import pandas as pd
 import fsspec
+from pathlib import Path
 
 VALID_SLIDE_EXTENSIONS = [".svs", ".scn", ".tif"]
 
-def stitching(file_path, wsi_object, downscale = 64, storage_options={}):
+def stitching(file_path, wsi_object, filesystem, downscale = 64):
     start = time.time()
-    heatmap = StitchCoords(file_path, wsi_object, 
-                           downscale=downscale, bg_color=(0,0,0), 
-                           alpha=-1, draw_grid=False, storage_options=storage_options)
+    with filesystem.open(file_path, 'rb') as hdf5_file_path:
+        heatmap = StitchCoords(hdf5_file_path, wsi_object, 
+                            downscale=downscale, bg_color=(0,0,0), 
+                            alpha=-1, draw_grid=False)
     total_time = time.time() - start
     
     return heatmap, total_time
@@ -36,12 +38,12 @@ def segment(WSI_object, seg_params = None, filter_params = None, mask_file = Non
     seg_time_elapsed = time.time() - start_time   
     return WSI_object, seg_time_elapsed
 
-def patching(WSI_object, **kwargs):
+def patching(WSI_object, h5_file_path, **kwargs):
     ### Start Patch Timer
     start_time = time.time()
 
     # Patch
-    file_path = WSI_object.process_contours(**kwargs)
+    file_path = WSI_object.process_contours(h5_file_path, **kwargs)
 
 
     ### Stop Patch Timer
@@ -69,15 +71,24 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
                        "secret" : s3_storage_secret, 
                        "client_kwargs" : {'endpoint_url' : s3_endpoint_url}}
 
-    filesystem, slide_path = fsspec.core.url_to_fs(source, **storage_options)
+    # Create fsspec filesystems for file operations, 
+    # simplecache is used for dst_filesystem to allow seeking/writing to h5 files 
+    # at the same time since the default s3 filesystem does not support it
+    # Url Chaining: https://filesystem-spec.readthedocs.io/en/latest/features.html#url-chaining
+    src_filesystem, slide_path = fsspec.core.url_to_fs(source, **storage_options)
+    dst_filesystem, dst_path = fsspec.core.url_to_fs("simplecache::" + save_dir, s3=storage_options)
+    
+    dst_filesystem.makedirs(str(Path(dst_path + patch_save_dir)), exist_ok=True)
+    dst_filesystem.makedirs(str(Path(dst_path + mask_save_dir)), exist_ok=True)
+    dst_filesystem.makedirs(str(Path(dst_path + stitch_save_dir)), exist_ok=True)
+
     slides = []  # type: list[str]
     
     if any([slide_path.endswith(ext) for ext in VALID_SLIDE_EXTENSIONS]):
         slides += slide_path
     else:
         for ext in VALID_SLIDE_EXTENSIONS:
-            slides += filesystem.glob(f"{slide_path}/*{ext}")
-    
+            slides += src_filesystem.glob(f"{slide_path}/*{ext}")
     slides = [slide.split('/')[-1] for slide in slides]
 
     if process_list is None:
@@ -106,8 +117,8 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
     stitch_times = 0.
 
     for i in range(total):
-        csv_path = os.path.join(save_dir, 'process_list_autogen.csv')
-        with fsspec.open(csv_path, 'w', **storage_options) as f:
+        csv_path = str(Path(dst_path) / 'process_list_autogen.csv')
+        with dst_filesystem.open(csv_path, 'w') as f:
             df.to_csv(f, index=False)
         idx = process_stack.index[i]
         slide = process_stack.loc[idx, 'slide_id']
@@ -117,7 +128,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
         df.loc[idx, 'process'] = 0
         slide_id, _ = os.path.splitext(slide)
 
-        if auto_skip and filesystem.isfile(os.path.join(patch_save_dir, slide_id + '.h5')):
+        if auto_skip and dst_filesystem.isfile(str(Path(dst_path + patch_save_dir) / f'{slide_id}.h5')):
             print('{} already exist in destination location, skipped'.format(slide_id))
             df.loc[idx, 'status'] = 'already_exist'
             continue
@@ -210,23 +221,25 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 
         if save_mask:
             mask = WSI_object.visWSI(**current_vis_params)
-            mask_path = os.path.join(mask_save_dir, slide_id+'.jpg')
-            with fsspec.open(mask_path, 'wb', **storage_options) as f:
+            mask_path = str(Path(dst_path + mask_save_dir) / f'{slide_id}.jpg')
+            with dst_filesystem.open(mask_path, 'wb') as f:
                 mask.save(f, "JPEG")
 
         patch_time_elapsed = -1 # Default time
         if patch:
+            save_path = str(Path(dst_path + patch_save_dir) / f'{slide_id}.h5')
             current_patch_params.update({'patch_level': patch_level, 'patch_size': patch_size, 'step_size': step_size, 
-                                         'save_path': patch_save_dir})
-            file_path, patch_time_elapsed = patching(WSI_object = WSI_object,  **current_patch_params,)
+                                        'save_path': save_path})
+            with dst_filesystem.open(save_path, 'ab+') as h5_file_path:
+                file_path, patch_time_elapsed = patching(WSI_object, h5_file_path, **current_patch_params,)
         
         stitch_time_elapsed = -1
         if stitch:
-            file_path = os.path.join(patch_save_dir, slide_id+'.h5')
-            if filesystem.isfile(file_path):
-                heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, downscale=64, storage_options=storage_options)
-                stitch_path = os.path.join(stitch_save_dir, slide_id+'.jpg')
-                with fsspec.open(stitch_path, 'wb', **storage_options) as f:
+            file_path = str(Path(dst_path + patch_save_dir) / f'{slide_id}.h5')
+            if dst_filesystem.isfile(file_path):
+                heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, dst_filesystem, downscale=64)
+                stitch_path = str(Path(dst_path + stitch_save_dir) / f'{slide_id}.jpg')
+                with dst_filesystem.open(stitch_path, 'wb') as f:
                     heatmap.save(f, "JPEG")
 
         print("segmentation took {} seconds".format(seg_time_elapsed))
@@ -242,7 +255,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
     patch_times /= total
     stitch_times /= total
 
-    with fsspec.open(csv_path, 'w', **storage_options) as f:
+    with dst_filesystem.open(csv_path, 'w') as f:
         df.to_csv(f, index=False)
     print("average segmentation time in s per slide: {}".format(seg_times))
     print("average patching time in s per slide: {}".format(patch_times))
@@ -276,9 +289,9 @@ parser.add_argument('--s3_endpoint_url', type = str, default=None)
 if __name__ == '__main__':
     args = parser.parse_args()
 
-    patch_save_dir = os.path.join(args.save_dir, 'patches')
-    mask_save_dir = os.path.join(args.save_dir, 'masks')
-    stitch_save_dir = os.path.join(args.save_dir, 'stitches')
+    patch_save_dir = '/patches'
+    mask_save_dir = '/masks'
+    stitch_save_dir = '/stitches'
 
     if args.process_list:
         process_list = os.path.join(args.save_dir, args.process_list)
