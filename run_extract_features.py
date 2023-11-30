@@ -1,25 +1,26 @@
 #!/usr/bin/env python
 
 import torch
+from pathlib import Path
 from datasets.dataset_h5 import Dataset_All_Bags, Whole_Slide_Bag_FP
 from models.resnet_custom import resnet50_baseline
 from torch.utils.data import DataLoader
 from utils.utils import collate_features
 from utils.file_utils import save_hdf5
-import openslide
 import logging
-from typing import Optional
-from dataclasses import dataclass
+from typing import Optional, List, Any
+from dataclasses import dataclass, field
 import hydra
 from hydra.core.config_store import ConfigStore
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, MISSING
 import sys
+import h5py
 
 @dataclass
 class ExtractFeaturesConfig:
-    slide_path: str
-    h5_path: str
-    output_prefix: str
+    slide_path: str = MISSING
+    h5_path: str = MISSING
+    output_prefix: str = MISSING
     model_name: str = "resnet50"
     model_path: str = ""
     ctranspath_path: str = ""
@@ -28,17 +29,20 @@ class ExtractFeaturesConfig:
     target_patch_size: Optional[int] = None
     use_gpu: bool = True
     num_workers: int = 16
+    storage_options: dict = field(default_factory=dict)
+    defaults: List[Any] = field(default_factory=lambda: ["_self_", "config", "extract_features_config"])
 
 
 log = logging.getLogger(__name__)
 
 cs = ConfigStore.instance()
-cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
+cs.store(name='base_extract_features_config', node=ExtractFeaturesConfig)
 
-@hydra.main(version_base=None, config_name="extract_features_config")
-def compute_w_loader(cfg: ExtractFeaturesConfig):
-    wsi = openslide.open_slide(cfg.slide_path)
+@hydra.main(version_base=None, config_path='.', config_name='base_extract_features_config')
+def extract_features(cfg: ExtractFeaturesConfig):
+    Path(cfg.output_prefix).parent.mkdir(parents=True, exist_ok=True)
     output_h5_path = cfg.output_prefix + ".h5"
+    output_pt_path = cfg.output_prefix + ".pt"
     device = torch.device('cuda') if cfg.use_gpu and torch.cuda.is_available() else torch.device('cpu')
 
     log.info('loading model checkpoint')
@@ -65,11 +69,11 @@ def compute_w_loader(cfg: ExtractFeaturesConfig):
 
     dataset = Whole_Slide_Bag_FP(
         file_path=cfg.h5_path,
-        wsi=wsi,
+        wsi_path=cfg.slide_path,
         pretrained=pretrained,
-        target_patch_size=cfg.target_patch_size)
+        target_patch_size=cfg.target_patch_size,
+        storage_options=OmegaConf.to_container(cfg.storage_options))
 
-    x, y = dataset[0]
     kwargs = {'num_workers': cfg.num_workers, 'pin_memory': cfg.use_gpu and torch.cuda.is_available()}
     loader = DataLoader(dataset=dataset, batch_size=cfg.batch_size, **kwargs, collate_fn=collate_features)
 
@@ -87,6 +91,14 @@ def compute_w_loader(cfg: ExtractFeaturesConfig):
             save_hdf5(output_h5_path, asset_dict, attr_dict= None, mode=mode)
             mode = 'a'
 
+    with h5py.File(output_h5_path, "r") as file:
+        features = file['features'][:]
+        log.info(f"features size: {features.shape}")
+        log.info(f"coordinates size: {file['coords'].shape}")
+        features = torch.from_numpy(features)
+        torch.save(features, output_pt_path)
+
+
 if __name__ == "__main__":
-    compute_w_loader()
+    extract_features()
 

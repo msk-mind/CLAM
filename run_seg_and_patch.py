@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 
-from typing import Optional
+from typing import Optional, List, Any
 from pathlib import Path
 import numpy as np
 from dataclasses import dataclass, field
 import hydra
 from hydra.core.config_store import ConfigStore
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, MISSING
 import logging
+import fsspec
+from tiffslide import TiffSlide
 
 from wsi_core.WholeSlideImage import WholeSlideImage
 from wsi_core.wsi_utils import StitchCoords
@@ -51,8 +53,8 @@ class StitchConfig:
 
 @dataclass
 class SegPatchConfig:
-    slide_path: str
-    output_prefix: str
+    slide_path: str = MISSING
+    output_prefix: str = MISSING
     requested_magnification: Optional[int] = None
     seg_config: SegConfig = field(default_factory=SegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
@@ -62,16 +64,19 @@ class SegPatchConfig:
     save_mask: bool = True
     stitch: bool = True
     patch: bool = True
+    storage_options: dict = field(default_factory=dict)
+    defaults: List[Any] = field(default_factory=lambda: ["_self_", "config", "seg_patch_config"])
 
 log = logging.getLogger(__name__)
 
 cs = ConfigStore.instance()
-cs.store(name="seg_patch_config", node=SegPatchConfig)
+cs.store(name="base_seg_patch_config", node=SegPatchConfig)
 
-@hydra.main(version_base=None, config_name="seg_patch_config")
+@hydra.main(version_base=None, config_path='.', config_name='base_seg_patch_config')
 def seg_and_patch(cfg: SegPatchConfig):
     slide_id = Path(cfg.slide_path).stem
-    WSI_object = WholeSlideImage(cfg.slide_path)
+    f = fsspec.open(cfg.slide_path, **cfg.storage_options)
+    WSI_object = WholeSlideImage(slide_id, TiffSlide(f))
     Path(cfg.output_prefix).parent.mkdir(parents=True, exist_ok=True)
 
     slide_mag = int(float(WSI_object.wsi.properties["aperio.AppMag"]))
@@ -121,6 +126,8 @@ def seg_and_patch(cfg: SegPatchConfig):
             heatmap = StitchCoords(file_path, WSI_object, **OmegaConf.to_container(cfg.stitch_config, resolve=True))
             stitch_path = cfg.output_prefix + ".stitch.jpg"
             heatmap.save(stitch_path)
+
+    f.close()
 
 if __name__ == "__main__":
     seg_and_patch()

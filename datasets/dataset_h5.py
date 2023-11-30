@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import os
+import fsspec
 import torch
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ import re
 import pdb
 import pickle
 from typing import Optional
+from tiffslide import TiffSlide
 
 from torch.utils.data import Dataset, DataLoader, sampler
 from torchvision import transforms, utils, models
@@ -95,11 +97,12 @@ class Whole_Slide_Bag(Dataset):
 
 class Whole_Slide_Bag_FP(Dataset):
     def __init__(self,
-        file_path,
-        wsi,
-        pretrained=False,
-        custom_transforms=None,
-        target_patch_size:Optional[int] = None,
+                 file_path,
+                 wsi_path,
+                 pretrained=False,
+                 custom_transforms=None,
+                 target_patch_size:Optional[int] = None,
+                 storage_options: dict = {},
         ):
         """
         Args:
@@ -109,7 +112,8 @@ class Whole_Slide_Bag_FP(Dataset):
             target_patch_size (int): Custom defined image size before embedding
         """
         self.pretrained=pretrained
-        self.wsi = wsi
+        self.wsi_path = wsi_path
+        self.storage_options = storage_options
         if not custom_transforms and target_patch_size:
             self.roi_transforms = eval_transforms(pretrained=pretrained)
             self.roi_transforms.transforms.insert(0, transforms.CenterCrop(target_patch_size))
@@ -148,15 +152,11 @@ class Whole_Slide_Bag_FP(Dataset):
     def __getitem__(self, idx):
         with h5py.File(self.file_path,'r') as hdf5_file:
             coord = hdf5_file['coords'][idx]
-        img = self.wsi.read_region(coord, self.patch_level, (self.patch_size, self.patch_size)).convert('RGB')
+        with fsspec.open(self.wsi_path, **self.storage_options) as f:
+            wsi = TiffSlide(f)
+            img = wsi.read_region(coord, self.patch_level, (self.patch_size, self.patch_size)).convert('RGB')
+            img = self.roi_transforms(img).unsqueeze(0)
 
-        #print(img.size)
-        #if self.prelim_downsampled_patch_size[0] != self.patch_size:
-        #   img = img.resize(self.prelim_downsampled_patch_size)
-            #print(img.size)
-        img = self.roi_transforms(img).unsqueeze(0)
-        #print(img.shape)
-        #exit()
         return img, coord
 
 class Dataset_All_Bags(Dataset):

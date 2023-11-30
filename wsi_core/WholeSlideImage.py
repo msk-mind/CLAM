@@ -21,17 +21,16 @@ from utils.file_utils import load_pkl, save_pkl
 Image.MAX_IMAGE_PIXELS = 933120000
 
 class WholeSlideImage(object):
-    def __init__(self, path):
+    def __init__(self, name, wsi):
 
         """
         Args:
-            path (str): fullpath to WSI file
+            wsi (object): wsi object
         """
 
 #         self.name = ".".join(path.split("/")[-1].split('.')[:-1])
-        self.name = os.path.splitext(os.path.basename(path))[0]
-        with fsspec.open(path) as f:
-            self.wsi = TiffSlide(path)
+        self.name = name
+        self.wsi = wsi
         self.level_downsamples = self._assertLevelDownsamples()
         self.level_dim = self.wsi.level_dimensions
 
