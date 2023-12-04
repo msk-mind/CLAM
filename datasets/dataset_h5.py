@@ -165,7 +165,9 @@ class Whole_Slide_Bag_FP(Dataset):
 					img = img.resize(self.target_patch_size)
 				img = self.roi_transforms(img).unsqueeze(0)
 		return img, coord
-	
+
+	# Initializing via worker_init, due to TiffSlide and DataLoader abstraction
+	# https://github.com/Bayer-Group/tiffslide/issues/18
 	def worker_init(self, *args):
 		self.wsi = TiffSlide(self.slide_file_path, storage_options=self.storage_options)
 
