@@ -137,8 +137,8 @@ class Whole_Slide_Bag_FP(Dataset):
         with self.simplecache_fs.open(self.h5_path, 'rb', storage_options=self.storage_options) as h5_file:
             with h5py.File(h5_file, "r") as hdf5_file:
                 dset = hdf5_file["coords"]
-            for name, value in dset.attrs.items():
-                log.info(name, value)
+                for name, value in dset.attrs.items():
+                    log.info(f"{name}, {value}")
 
         log.info("\nfeature extraction settings")
         log.info(f"target patch size: {self.target_patch_size}")
