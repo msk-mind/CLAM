@@ -1,22 +1,13 @@
 import logging
-import math
-import os
-import pdb
-import pickle
-import re
-from random import randrange
 from typing import Optional
 
 import fsspec
 import h5py
-import numpy as np
 import pandas as pd
-import torch
-import torch.nn.functional as F
 from PIL import Image
 from tiffslide import TiffSlide
-from torch.utils.data import DataLoader, Dataset, sampler
-from torchvision import models, transforms, utils
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 log = logging.getLogger(__name__)
 
@@ -124,29 +115,30 @@ class Whole_Slide_Bag_FP(Dataset):
         else:
             raise NotImplementedError  # self.roi_transforms = custom_transforms
 
-        self.file_path = file_path
 
-        with h5py.File(self.file_path, "r") as f:
-            dset = f["coords"]
-            self.patch_level = f["coords"].attrs["patch_level"]
-            self.patch_size = f["coords"].attrs["patch_size"]
-            self.length = len(dset)
-            if target_patch_size:
-                self.target_patch_size = (target_patch_size,) * 2
-            elif custom_downsample > 1:
-                self.target_patch_size = (self.patch_size // custom_downsample,) * 2
-            else:
-                self.target_patch_size = None
+        fs, self.h5_path = fsspec.core.url_to_fs(file_path, **storage_options)
+        self.simplecache_fs = fsspec.filesystem('simplecache', fs=fs)
+        with self.simplecache_fs.open(self.h5_path, 'rb', storage_options=storage_options) as h5_file:
+            with h5py.File(h5_file, "r") as f:
+                dset = f["coords"]
+                self.patch_level = f["coords"].attrs["patch_level"]
+                self.patch_size = f["coords"].attrs["patch_size"]
+                self.length = len(dset)
+                if target_patch_size:
+                    self.target_patch_size = (target_patch_size,) * 2
+                else:
+                    self.target_patch_size = None
         self.summary()
 
     def __len__(self):
         return self.length
 
     def summary(self):
-        hdf5_file = h5py.File(self.file_path, "r")
-        dset = hdf5_file["coords"]
-        for name, value in dset.attrs.items():
-            log.info(name, value)
+        with self.simplecache_fs.open(self.h5_path, 'rb', storage_options=self.storage_options) as h5_file:
+            with h5py.File(h5_file, "r") as hdf5_file:
+                dset = hdf5_file["coords"]
+            for name, value in dset.attrs.items():
+                log.info(name, value)
 
         log.info("\nfeature extraction settings")
         log.info(f"target patch size: {self.target_patch_size}")
@@ -154,16 +146,23 @@ class Whole_Slide_Bag_FP(Dataset):
         log.info(f"transformations: {self.roi_transforms}")
 
     def __getitem__(self, idx):
-        with h5py.File(self.file_path, "r") as hdf5_file:
-            coord = hdf5_file["coords"][idx]
-        with fsspec.open(self.wsi_path, **self.storage_options) as f:
-            wsi = TiffSlide(f)
-            img = wsi.read_region(
-                coord, self.patch_level, (self.patch_size, self.patch_size)
-            ).convert("RGB")
-            img = self.roi_transforms(img).unsqueeze(0)
+        with self.simplecache_fs.open(self.h5_path, 'rb', storage_options=self.storage_options) as h5_file:
+            with h5py.File(h5_file, "r") as hdf5_file:
+                coord = hdf5_file["coords"][idx]
+
+        img = self.wsi.read_region(
+            coord, self.patch_level, (self.patch_size, self.patch_size)
+        ).convert("RGB")
+        if self.target_patch_size is not None:
+            img = img.resize(self.target_patch_size)
+        img = self.roi_transforms(img).unsqueeze(0)
 
         return img, coord
+
+    # Initializing via worker_init, due to TiffSlide and DataLoader abstraction
+    # https://github.com/Bayer-Group/tiffslide/issues/18
+    def worker_init(self, *args):
+        self.wsi = TiffSlide(self.wsi_path, storage_options=self.storage_options)
 
 
 class Dataset_All_Bags(Dataset):

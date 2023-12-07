@@ -1,7 +1,5 @@
 import math
 import os
-import pdb
-
 import cv2
 import h5py
 import numpy as np
@@ -364,7 +362,6 @@ def StitchPatches(
     file.close()
     return heatmap
 
-
 def StitchCoords(
     hdf5_file_path,
     wsi_object,
@@ -372,7 +369,6 @@ def StitchCoords(
     draw_grid=False,
     bg_color=(0, 0, 0),
     alpha=-1,
-    custom_downsample=1,
 ):
     if isinstance(bg_color, list):
         bg_color = tuple(bg_color)
