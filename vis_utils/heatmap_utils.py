@@ -2,6 +2,7 @@ import math
 import os
 import pdb
 from math import floor
+from pathlib import Path
 
 import h5py
 import matplotlib.pyplot as plt
@@ -30,7 +31,8 @@ def drawHeatmap(
     scores, coords, slide_path=None, wsi_object=None, vis_level=-1, **kwargs
 ):
     if wsi_object is None:
-        wsi_object = WholeSlideImage(slide_path)
+        name = Path(slide_path).stem
+        wsi_object = WholeSlideImage(name=name, path=slide_path)
         print(wsi_object.name)
 
     wsi = wsi_object.getOpenSlide()
@@ -44,7 +46,8 @@ def drawHeatmap(
 
 
 def initialize_wsi(wsi_path, seg_mask_path=None, seg_params=None, filter_params=None):
-    wsi_object = WholeSlideImage(wsi_path)
+    name = Path(wsi_path).stem
+    wsi_object = WholeSlideImage(name=name, path=wsi_path)
     if seg_params["seg_level"] < 0:
         best_level = wsi_object.wsi.get_best_level_for_downsample(32)
         seg_params["seg_level"] = best_level

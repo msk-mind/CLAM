@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 
 class WholeSlideImage(object):
-    def __init__(self, name, wsi):
+    def __init__(self, name, path, storage_options={}):
         """
         Args:
             wsi (object): wsi object
@@ -39,7 +39,7 @@ class WholeSlideImage(object):
 
         #         self.name = ".".join(path.split("/")[-1].split('.')[:-1])
         self.name = name
-        self.wsi = wsi
+        self.wsi = TiffSlide(path, storage_options=storage_options)
         self.level_downsamples = self._assertLevelDownsamples()
         self.level_dim = self.wsi.level_dimensions
 
@@ -561,6 +561,7 @@ class WholeSlideImage(object):
         log.info(f"Total number of contours to process: {n_contours}")
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
+
         for idx, cont in enumerate(self.contours_tissue):
             if (idx + 1) % fp_chunk_size == fp_chunk_size:
                 log.info("Processing contour {}/{}".format(idx, n_contours))

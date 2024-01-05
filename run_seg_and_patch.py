@@ -55,7 +55,6 @@ class StitchConfig:
     downscale: int = 64
     bg_color: tuple = (0, 0, 0)
     alpha: int = -1
-    custom_downsample: int = 1
 
 
 @dataclass
@@ -86,15 +85,13 @@ cs.store(name="base_seg_patch_config", node=SegPatchConfig)
 @hydra.main(version_base=None, config_path=".", config_name="base_seg_patch_config")
 def seg_and_patch(cfg: SegPatchConfig):
     slide_id = Path(cfg.slide_path).stem
-    f = fsspec.open(cfg.slide_path, **cfg.storage_options)
-    WSI_object = WholeSlideImage(slide_id, TiffSlide(f))
+    WSI_object = WholeSlideImage(slide_id, path=cfg.slide_path, storage_options=cfg.storage_options)
     Path(cfg.output_prefix).parent.mkdir(parents=True, exist_ok=True)
 
     slide_mag = int(float(WSI_object.wsi.properties["aperio.AppMag"]))
     if cfg.requested_magnification:
         custom_downsample = slide_mag / cfg.requested_magnification
         cfg.patch_config.custom_downsample = custom_downsample
-        cfg.stitch_config.custom_downsample = custom_downsample
 
     if cfg.vis_config.vis_level < 0:
         if len(WSI_object.level_dim) == 1:
@@ -152,7 +149,6 @@ def seg_and_patch(cfg: SegPatchConfig):
         else:
             log.info("No patches found")
 
-    f.close()
 
 
 if __name__ == "__main__":

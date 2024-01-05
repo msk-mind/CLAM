@@ -126,7 +126,7 @@ def seg_and_patch(
 
         # Inialize WSI
         full_path = os.path.join(source, slide)
-        WSI_object = WholeSlideImage(full_path)
+        WSI_object = WholeSlideImage(name=slide_id, path=full_path)
 
         if use_default_params:
             current_vis_params = vis_params.copy()

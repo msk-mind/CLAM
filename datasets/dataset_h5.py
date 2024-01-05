@@ -1,22 +1,13 @@
 import logging
-import math
-import os
-import pdb
-import pickle
-import re
-from random import randrange
 from typing import Optional
 
 import fsspec
 import h5py
-import numpy as np
 import pandas as pd
-import torch
-import torch.nn.functional as F
 from PIL import Image
 from tiffslide import TiffSlide
-from torch.utils.data import DataLoader, Dataset, sampler
-from torchvision import models, transforms, utils
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +115,6 @@ class Whole_Slide_Bag_FP(Dataset):
         else:
             raise NotImplementedError  # self.roi_transforms = custom_transforms
 
-        self.file_path = file_path
 
         with h5py.File(self.file_path, "r") as f:
             dset = f["coords"]
@@ -164,6 +154,11 @@ class Whole_Slide_Bag_FP(Dataset):
             img = self.roi_transforms(img).unsqueeze(0)
 
         return img, coord
+
+    # Initializing via worker_init, due to TiffSlide and DataLoader abstraction
+    # https://github.com/Bayer-Group/tiffslide/issues/18
+    def worker_init(self, *args):
+        self.wsi = TiffSlide(self.wsi_path, storage_options=self.storage_options)
 
 
 class Dataset_All_Bags(Dataset):
