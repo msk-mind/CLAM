@@ -105,6 +105,7 @@ class Whole_Slide_Bag_FP(Dataset):
             target_patch_size (int): Custom defined image size before embedding
         """
         self.pretrained = pretrained
+        self.file_path = file_path
         self.wsi_path = wsi_path
         self.storage_options = storage_options
         if not custom_transforms and target_patch_size:
