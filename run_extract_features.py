@@ -9,6 +9,7 @@ from typing import Any, List, Optional
 import h5py
 import hydra
 import torch
+import torch.nn as nn
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 from torch.utils.data import DataLoader
